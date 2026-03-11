@@ -56,6 +56,9 @@ stats = {
 # Track processed order IDs to avoid duplicates
 processed_orders = set()
 
+# Track WealthCharts positions to distinguish open vs close orders
+wc_positions = {}  # symbol -> portfolio (qty, sign indicates direction)
+
 # ---------------------------------------------------------------------------
 # Signal processing
 # ---------------------------------------------------------------------------
@@ -90,9 +93,13 @@ def process_signal(signal):
     symbol_map = cfg.get("symbol_mapping", {})
     mt5_symbol = symbol_map.get(wc_symbol, wc_symbol)
 
+    # --- Track WealthCharts positions ---
+    if sig_type in ("POSITION_OPEN", "POSITION_CLOSE", "POSITION_UPDATE"):
+        wc_positions[wc_symbol] = signal.get("portfolio", 0)
+
     # --- Handle different signal types ---
     if sig_type == "ORDER":
-        handle_order(signal, cfg, mt5_symbol)
+        handle_order(signal, cfg, mt5_symbol, wc_symbol)
     elif sig_type == "POSITION_CLOSE":
         handle_close(signal, cfg, mt5_symbol)
     elif sig_type == "POSITION_OPEN":
@@ -101,13 +108,12 @@ def process_signal(signal):
         logger.info(f"Position updated: {wc_symbol} portfolio={signal.get('portfolio')}")
 
 
-def handle_order(signal, cfg, mt5_symbol):
+def handle_order(signal, cfg, mt5_symbol, wc_symbol):
     """Handle an ORDER signal — execute trade on MT5."""
     order_id = signal.get("order_id")
     order_state = signal.get("order_state")
 
     # Only process filled orders (state 4) or new pending orders (state 3 for limit/stop)
-    min_state = cfg.get("filters", {}).get("min_order_state", 4)
     order_type = signal.get("order_type", "MARKET")
 
     # For market orders, wait for fill (state 4)
@@ -126,6 +132,24 @@ def handle_order(signal, cfg, mt5_symbol):
     # Limit dedup cache size
     if len(processed_orders) > 10000:
         processed_orders.clear()
+
+    # --- Detect if this is a CLOSE order (not a new open) ---
+    # When closing a SHORT (-40), WC sends a BUY order (qty_sent: +40)
+    # When closing a LONG (+40), WC sends a SELL order (qty_sent: -40)
+    # We detect this by checking if the order opposes the current position
+    qty_sent = signal.get("qty_sent", 0)
+    current_pos = wc_positions.get(wc_symbol, 0)
+
+    if current_pos != 0:
+        # Position exists — check if this order is closing/reducing it
+        order_opposes_position = (current_pos > 0 and qty_sent < 0) or (current_pos < 0 and qty_sent > 0)
+        if order_opposes_position:
+            logger.info(
+                f"Order {order_id} is a CLOSE/REDUCE order "
+                f"(position={current_pos}, qty_sent={qty_sent}). "
+                f"Skipping — POSITION_CLOSE signal will handle MT5 close."
+            )
+            return
 
     # --- Lot multiplier ---
     lot_multiplier = cfg.get("lot_multiplier", 1.0)
