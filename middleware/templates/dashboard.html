@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WC → MT5 Trade Copier</title>
+  <style>
+    :root {
+      --bg: #0f172a; --bg2: #1e293b; --bg3: #334155;
+      --text: #e2e8f0; --text2: #94a3b8; --text3: #64748b;
+      --blue: #3b82f6; --green: #22c55e; --red: #ef4444;
+      --yellow: #f59e0b; --purple: #8b5cf6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--bg3); margin-bottom: 24px; }
+    header h1 { font-size: 20px; color: var(--blue); }
+    .status-badge { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 500; }
+    .status-badge.online { background: #064e3b; color: #6ee7b7; }
+    .status-badge.offline { background: #450a0a; color: #fca5a5; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot.green { background: var(--green); }
+    .dot.red { background: var(--red); }
+
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .card { background: var(--bg2); border-radius: 12px; padding: 20px; }
+    .card h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); margin-bottom: 8px; }
+    .card .value { font-size: 28px; font-weight: 700; }
+    .card .value.green { color: var(--green); }
+    .card .value.red { color: var(--red); }
+    .card .value.blue { color: var(--blue); }
+    .card .value.yellow { color: var(--yellow); }
+
+    .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .panel { background: var(--bg2); border-radius: 12px; padding: 20px; }
+    .panel h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .panel h2 .icon { width: 20px; text-align: center; }
+
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+    .form-group input, .form-group select { width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--bg3); border-radius: 6px; color: var(--text); font-size: 13px; }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--blue); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .toggle input { display: none; }
+    .toggle .slider { width: 40px; height: 22px; background: var(--bg3); border-radius: 11px; position: relative; transition: background 0.2s; }
+    .toggle .slider::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; background: white; border-radius: 50%; transition: transform 0.2s; }
+    .toggle input:checked + .slider { background: var(--blue); }
+    .toggle input:checked + .slider::after { transform: translateX(18px); }
+    .toggle span { font-size: 13px; }
+
+    .btn { padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: opacity 0.2s; }
+    .btn:hover { opacity: 0.85; }
+    .btn-blue { background: var(--blue); color: white; }
+    .btn-green { background: var(--green); color: white; }
+    .btn-red { background: var(--red); color: white; }
+    .btn-sm { padding: 5px 10px; font-size: 11px; }
+
+    .mapping-table { width: 100%; border-collapse: collapse; }
+    .mapping-table th, .mapping-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--bg3); font-size: 13px; }
+    .mapping-table th { color: var(--text2); font-size: 11px; text-transform: uppercase; }
+    .mapping-table input { width: 100%; padding: 5px 8px; background: var(--bg); border: 1px solid var(--bg3); border-radius: 4px; color: var(--text); font-size: 12px; }
+    .mapping-table .btn-remove { background: none; border: none; color: var(--red); cursor: pointer; font-size: 16px; }
+
+    .log-panel { background: var(--bg2); border-radius: 12px; padding: 20px; }
+    .log-panel h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+    .log-list { max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; }
+    .log-entry { padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; gap: 10px; }
+    .log-entry .time { color: var(--text3); min-width: 80px; }
+    .log-entry .type { font-weight: 600; min-width: 120px; }
+    .log-entry .type.order { color: var(--blue); }
+    .log-entry .type.open { color: var(--green); }
+    .log-entry .type.close { color: var(--yellow); }
+    .log-entry .type.update { color: var(--purple); }
+    .log-entry .detail { color: var(--text2); }
+    .log-entry .buy { color: var(--green); }
+    .log-entry .sell { color: var(--red); }
+
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: repeat(2, 1fr); }
+      .panels { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>WealthCharts → MT5 Trade Copier</h1>
+      <div id="statusBadge" class="status-badge offline">
+        <span class="dot red" id="statusDot"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+    </header>
+
+    <!-- Stats cards -->
+    <div class="grid">
+      <div class="card">
+        <h3>Signals Received</h3>
+        <div class="value blue" id="statSignals">0</div>
+      </div>
+      <div class="card">
+        <h3>Orders Executed</h3>
+        <div class="value green" id="statExecuted">0</div>
+      </div>
+      <div class="card">
+        <h3>Orders Failed</h3>
+        <div class="value red" id="statFailed">0</div>
+      </div>
+      <div class="card">
+        <h3>Positions Closed</h3>
+        <div class="value yellow" id="statClosed">0</div>
+      </div>
+    </div>
+
+    <!-- Configuration panels -->
+    <div class="panels">
+      <!-- MT5 Connection -->
+      <div class="panel">
+        <h2><span class="icon">⚙</span> MT5 Connection</h2>
+        <div class="form-group">
+          <label>MT5 Terminal Path</label>
+          <input type="text" id="mt5Path" placeholder="C:\Program Files\MetaTrader 5\terminal64.exe">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Login</label>
+            <input type="number" id="mt5Login" placeholder="Account number">
+          </div>
+          <div class="form-group">
+            <label>Server</label>
+            <input type="text" id="mt5Server" placeholder="BrokerServer-Demo">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="mt5Password" placeholder="Account password">
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-blue" onclick="saveMT5()">Save</button>
+          <button class="btn btn-green" onclick="connectMT5()">Connect</button>
+        </div>
+      </div>
+
+      <!-- Trade Settings -->
+      <div class="panel">
+        <h2><span class="icon">↔</span> Trade Settings</h2>
+        <div class="form-group">
+          <label>Lot Multiplier</label>
+          <input type="number" id="lotMultiplier" step="0.01" min="0.01" value="1.0">
+          <div style="font-size:11px;color:var(--text3);margin-top:4px;">WC qty × multiplier = MT5 volume</div>
+        </div>
+        <div class="form-group" style="margin-top:16px;">
+          <label class="toggle">
+            <input type="checkbox" id="reverseMode">
+            <span class="slider"></span>
+            <span>Reverse Mode (BUY ↔ SELL)</span>
+          </label>
+        </div>
+        <div style="margin-top:16px;">
+          <button class="btn btn-blue" onclick="saveTradeSettings()">Save Settings</button>
+        </div>
+      </div>
+
+      <!-- Symbol Mapping -->
+      <div class="panel">
+        <h2><span class="icon">🔗</span> Symbol Mapping</h2>
+        <table class="mapping-table">
+          <thead>
+            <tr><th>WealthCharts</th><th>MT5</th><th></th></tr>
+          </thead>
+          <tbody id="mappingBody"></tbody>
+        </table>
+        <div style="margin-top:10px;display:flex;gap:8px;">
+          <button class="btn btn-sm btn-blue" onclick="addMapping()">+ Add Mapping</button>
+          <button class="btn btn-sm btn-green" onclick="saveMappings()">Save</button>
+        </div>
+      </div>
+
+      <!-- Telegram -->
+      <div class="panel">
+        <h2><span class="icon">📨</span> Telegram Notifications</h2>
+        <div class="form-group">
+          <label class="toggle">
+            <input type="checkbox" id="tgEnabled">
+            <span class="slider"></span>
+            <span>Enable Telegram Notifications</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label>Bot Token</label>
+          <input type="text" id="tgBotToken" placeholder="123456:ABC-DEF...">
+        </div>
+        <div class="form-group">
+          <label>Chat ID</label>
+          <input type="text" id="tgChatId" placeholder="Your Telegram chat ID">
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-blue" onclick="saveTelegram()">Save</button>
+          <button class="btn btn-green" onclick="testTelegram()">Test</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Signal Log -->
+    <div class="log-panel">
+      <h2>Signal Log</h2>
+      <div class="log-list" id="logList">
+        <div class="log-entry"><span class="time">—</span><span class="detail">Waiting for signals...</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = "";
+
+    // --- Load config ---
+    async function loadConfig() {
+      try {
+        const r = await fetch(`${API}/api/config`);
+        const cfg = await r.json();
+
+        document.getElementById("mt5Path").value = cfg.mt5?.path || "";
+        document.getElementById("mt5Login").value = cfg.mt5?.login || "";
+        document.getElementById("mt5Server").value = cfg.mt5?.server || "";
+        document.getElementById("lotMultiplier").value = cfg.lot_multiplier || 1.0;
+        document.getElementById("reverseMode").checked = cfg.reverse_mode || false;
+        document.getElementById("tgEnabled").checked = cfg.telegram?.enabled || false;
+        document.getElementById("tgBotToken").value = cfg.telegram?.bot_token || "";
+        document.getElementById("tgChatId").value = cfg.telegram?.chat_id || "";
+
+        // Symbol mappings
+        renderMappings(cfg.symbol_mapping || {});
+      } catch(e) { console.error("Failed to load config:", e); }
+    }
+
+    // --- Symbol Mapping ---
+    let mappings = {};
+    function renderMappings(map) {
+      mappings = map;
+      const tbody = document.getElementById("mappingBody");
+      tbody.innerHTML = "";
+      for (const [wc, mt5] of Object.entries(map)) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><input type="text" value="${wc}" class="wc-sym"></td>
+          <td><input type="text" value="${mt5}" class="mt5-sym"></td>
+          <td><button class="btn-remove" onclick="this.closest('tr').remove()">✕</button></td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+    function addMapping() {
+      const tbody = document.getElementById("mappingBody");
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><input type="text" class="wc-sym" placeholder="CM.MNQH6"></td>
+        <td><input type="text" class="mt5-sym" placeholder="NAS100"></td>
+        <td><button class="btn-remove" onclick="this.closest('tr').remove()">✕</button></td>
+      `;
+      tbody.appendChild(tr);
+    }
+    function getMappings() {
+      const map = {};
+      document.querySelectorAll("#mappingBody tr").forEach(tr => {
+        const wc = tr.querySelector(".wc-sym").value.trim();
+        const mt5 = tr.querySelector(".mt5-sym").value.trim();
+        if (wc && mt5) map[wc] = mt5;
+      });
+      return map;
+    }
+
+    // --- Save functions ---
+    async function saveMT5() {
+      const data = {
+        mt5: {
+          path: document.getElementById("mt5Path").value,
+          login: parseInt(document.getElementById("mt5Login").value) || 0,
+          password: document.getElementById("mt5Password").value,
+          server: document.getElementById("mt5Server").value,
+        }
+      };
+      await fetch(`${API}/api/config`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data) });
+      alert("MT5 settings saved!");
+    }
+
+    async function connectMT5() {
+      const r = await fetch(`${API}/api/mt5/connect`, { method: "POST" });
+      const d = await r.json();
+      alert(d.connected ? "MT5 connected!" : "MT5 connection failed. Check settings.");
+      checkHealth();
+    }
+
+    async function saveTradeSettings() {
+      const data = {
+        lot_multiplier: parseFloat(document.getElementById("lotMultiplier").value) || 1.0,
+        reverse_mode: document.getElementById("reverseMode").checked,
+      };
+      await fetch(`${API}/api/config`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data) });
+      alert("Trade settings saved!");
+    }
+
+    async function saveMappings() {
+      const data = { symbol_mapping: getMappings() };
+      await fetch(`${API}/api/config`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data) });
+      alert("Symbol mappings saved!");
+    }
+
+    async function saveTelegram() {
+      const data = {
+        telegram: {
+          enabled: document.getElementById("tgEnabled").checked,
+          bot_token: document.getElementById("tgBotToken").value,
+          chat_id: document.getElementById("tgChatId").value,
+        }
+      };
+      await fetch(`${API}/api/config`, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data) });
+      alert("Telegram settings saved!");
+    }
+
+    async function testTelegram() {
+      await saveTelegram();
+      await fetch(`${API}/api/telegram/test`, { method: "POST" });
+      alert("Test message sent! Check your Telegram.");
+    }
+
+    // --- Health & Stats ---
+    async function checkHealth() {
+      try {
+        const r = await fetch(`${API}/api/health`);
+        const d = await r.json();
+        const badge = document.getElementById("statusBadge");
+        const dot = document.getElementById("statusDot");
+        const text = document.getElementById("statusText");
+
+        if (d.mt5_connected) {
+          badge.className = "status-badge online";
+          dot.className = "dot green";
+          text.textContent = "MT5 Connected";
+        } else {
+          badge.className = "status-badge offline";
+          dot.className = "dot red";
+          text.textContent = "MT5 Disconnected";
+        }
+
+        document.getElementById("statSignals").textContent = d.stats?.signals_received || 0;
+        document.getElementById("statExecuted").textContent = d.stats?.orders_executed || 0;
+        document.getElementById("statFailed").textContent = d.stats?.orders_failed || 0;
+        document.getElementById("statClosed").textContent = d.stats?.positions_closed || 0;
+      } catch {
+        document.getElementById("statusBadge").className = "status-badge offline";
+        document.getElementById("statusDot").className = "dot red";
+        document.getElementById("statusText").textContent = "Server Offline";
+      }
+    }
+
+    // --- Log ---
+    async function loadLog() {
+      try {
+        const r = await fetch(`${API}/api/log?limit=30`);
+        const d = await r.json();
+        const list = document.getElementById("logList");
+        if (d.entries && d.entries.length > 0) {
+          list.innerHTML = d.entries.map(e => {
+            const time = e.processed_at ? new Date(e.processed_at).toLocaleTimeString() : "—";
+            const typeCls = e.type === "ORDER" ? "order" : e.type === "POSITION_OPEN" ? "open" : e.type === "POSITION_CLOSE" ? "close" : "update";
+            const sideCls = e.side === "BUY" || e.side === "LONG" ? "buy" : e.side === "SELL" || e.side === "SHORT" ? "sell" : "";
+            return `<div class="log-entry">
+              <span class="time">${time}</span>
+              <span class="type ${typeCls}">${e.type || "?"}</span>
+              <span class="${sideCls}">${e.side || ""}</span>
+              <span class="detail">${e.symbol || ""} qty=${e.quantity || e.portfolio || "?"}</span>
+            </div>`;
+          }).join("");
+        }
+      } catch {}
+    }
+
+    // --- Init ---
+    loadConfig();
+    checkHealth();
+    loadLog();
+    setInterval(checkHealth, 5000);
+    setInterval(loadLog, 3000);
+  </script>
+</body>
+</html>
