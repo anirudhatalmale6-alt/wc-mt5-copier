@@ -1,6 +1,8 @@
 """
 MT5 Bridge: Handles all interaction with MetaTrader 5 terminal.
 Uses the official MetaTrader5 Python library.
+LAZY IMPORT: MetaTrader5 is imported only when connect() is called,
+to prevent hanging during module import.
 """
 
 import logging
@@ -9,29 +11,43 @@ from datetime import datetime
 
 logger = logging.getLogger("wc-mt5.bridge")
 
-# MetaTrader5 is only available on Windows
-try:
-    import MetaTrader5 as mt5
+# MetaTrader5 module reference (loaded lazily)
+mt5 = None
+MT5_AVAILABLE = None  # None = not yet checked
 
-    MT5_AVAILABLE = True
-except ImportError:
-    MT5_AVAILABLE = False
-    logger.warning("MetaTrader5 library not available (requires Windows). Running in simulation mode.")
+
+def _load_mt5():
+    """Lazy-load the MetaTrader5 module."""
+    global mt5, MT5_AVAILABLE
+    if MT5_AVAILABLE is not None:
+        return MT5_AVAILABLE
+    try:
+        import MetaTrader5 as _mt5
+        mt5 = _mt5
+        MT5_AVAILABLE = True
+        logger.info("MetaTrader5 library loaded successfully")
+    except ImportError:
+        MT5_AVAILABLE = False
+        logger.warning("MetaTrader5 library not available. Running in simulation mode.")
+    return MT5_AVAILABLE
 
 
 class MT5Bridge:
     def __init__(self, config):
         self.config = config
         self.connected = False
-        self.simulation_mode = not MT5_AVAILABLE
+        self.simulation_mode = True  # Start in simulation mode until MT5 is loaded
 
     def connect(self):
         """Initialize and connect to MT5 terminal."""
-        if self.simulation_mode:
-            logger.info("[SIM] MT5 simulation mode active")
+        # Try to load MT5 library
+        if not _load_mt5():
+            logger.info("[SIM] MT5 not available — simulation mode active")
+            self.simulation_mode = True
             self.connected = True
             return True
 
+        self.simulation_mode = False
         mt5_cfg = self.config.get("mt5", {})
 
         # Initialize MT5
@@ -61,7 +77,7 @@ class MT5Bridge:
 
     def disconnect(self):
         """Shutdown MT5 connection."""
-        if not self.simulation_mode and MT5_AVAILABLE:
+        if not self.simulation_mode and mt5:
             mt5.shutdown()
         self.connected = False
         logger.info("MT5 disconnected")
@@ -70,7 +86,7 @@ class MT5Bridge:
         """Check if MT5 is connected."""
         if self.simulation_mode:
             return self.connected
-        if not MT5_AVAILABLE:
+        if not mt5:
             return False
         info = mt5.terminal_info()
         return info is not None and info.connected
@@ -85,7 +101,7 @@ class MT5Bridge:
                 "server": "SimulationServer",
                 "name": "Simulation Account",
             }
-        if not MT5_AVAILABLE:
+        if not mt5:
             return None
         info = mt5.account_info()
         if info:
@@ -99,22 +115,7 @@ class MT5Bridge:
         return None
 
     def place_order(self, symbol, side, volume, order_type="MARKET", price=0, sl=0, tp=0, comment=""):
-        """
-        Place an order on MT5.
-
-        Args:
-            symbol: MT5 symbol (after mapping)
-            side: "BUY" or "SELL"
-            volume: Lot size (after multiplier)
-            order_type: "MARKET", "LIMIT", "STOP", "STOP_LIMIT"
-            price: Price for limit/stop orders (0 for market)
-            sl: Stop loss price (0 = none)
-            tp: Take profit price (0 = none)
-            comment: Order comment
-
-        Returns:
-            dict with result info or None on failure
-        """
+        """Place an order on MT5."""
         if self.simulation_mode:
             result = {
                 "success": True,
@@ -129,7 +130,7 @@ class MT5Bridge:
             logger.info(f"[SIM] Order placed: {side} {volume} {symbol} @ {result['price']}")
             return result
 
-        if not MT5_AVAILABLE or not self.connected:
+        if not mt5 or not self.connected:
             logger.error("MT5 not connected, cannot place order")
             return None
 
@@ -150,7 +151,6 @@ class MT5Bridge:
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
 
-        # Set action and type based on order_type and side
         if order_type == "MARKET":
             request["action"] = mt5.TRADE_ACTION_DEAL
             if side == "BUY":
@@ -185,7 +185,6 @@ class MT5Bridge:
         if tp > 0:
             request["tp"] = tp
 
-        # Send order
         result = mt5.order_send(request)
         if result is None:
             error = mt5.last_error()
@@ -221,7 +220,7 @@ class MT5Bridge:
             logger.info(f"[SIM] Closed all positions for {symbol}")
             return {"success": True, "symbol": symbol, "simulation": True}
 
-        if not MT5_AVAILABLE or not self.connected:
+        if not mt5 or not self.connected:
             logger.error("MT5 not connected")
             return None
 
@@ -266,7 +265,7 @@ class MT5Bridge:
         """Get all open positions."""
         if self.simulation_mode:
             return []
-        if not MT5_AVAILABLE:
+        if not mt5:
             return []
         positions = mt5.positions_get()
         if positions is None:
