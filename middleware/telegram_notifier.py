@@ -4,7 +4,16 @@ Telegram Notifier: Sends trade notifications via Telegram bot.
 
 import logging
 import threading
-import requests
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+try:
+    import httpx
+except ImportError:
+    httpx = None
 
 logger = logging.getLogger("wc-mt5.telegram")
 
@@ -33,17 +42,21 @@ class TelegramNotifier:
         def _send():
             try:
                 url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-                resp = requests.post(
-                    url,
-                    json={
-                        "chat_id": self.chat_id,
-                        "text": text,
-                        "parse_mode": parse_mode,
-                    },
-                    timeout=10,
-                )
-                if resp.status_code != 200:
-                    logger.error(f"Telegram API error: {resp.status_code} {resp.text}")
+                payload = {
+                    "chat_id": self.chat_id,
+                    "text": text,
+                    "parse_mode": parse_mode,
+                }
+                if requests:
+                    resp = requests.post(url, json=payload, timeout=10)
+                    if resp.status_code != 200:
+                        logger.error(f"Telegram API error: {resp.status_code} {resp.text}")
+                elif httpx:
+                    resp = httpx.post(url, json=payload, timeout=10)
+                    if resp.status_code != 200:
+                        logger.error(f"Telegram API error: {resp.status_code} {resp.text}")
+                else:
+                    logger.error("No HTTP library available (requests or httpx)")
             except Exception as e:
                 logger.error(f"Telegram send failed: {e}")
 
