@@ -331,9 +331,16 @@ def main():
     logger.info("  WealthCharts → MT5 Trade Copier")
     logger.info("=" * 60)
 
-    # Connect to MT5
+    # Connect to MT5 in background thread (don't block server startup)
     if config.get("general", {}).get("auto_start_mt5", True):
-        bridge.connect()
+        import threading
+        def _connect_mt5():
+            try:
+                bridge.connect()
+            except Exception as e:
+                logger.error(f"MT5 background connect failed: {e}")
+        threading.Thread(target=_connect_mt5, daemon=True).start()
+        logger.info("MT5 connection starting in background...")
 
     # Start server
     logger.info("Starting middleware server on http://127.0.0.1:5000")
