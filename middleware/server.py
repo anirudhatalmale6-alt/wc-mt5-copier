@@ -327,9 +327,10 @@ def get_stats():
 # ---------------------------------------------------------------------------
 
 def main():
-    logger.info("=" * 60)
-    logger.info("  WealthCharts → MT5 Trade Copier")
-    logger.info("=" * 60)
+    print("=" * 60)
+    print("  WealthCharts - MT5 Trade Copier")
+    print("=" * 60)
+    print()
 
     # Connect to MT5 in background thread (don't block server startup)
     if config.get("general", {}).get("auto_start_mt5", True):
@@ -340,11 +341,15 @@ def main():
             except Exception as e:
                 logger.error(f"MT5 background connect failed: {e}")
         threading.Thread(target=_connect_mt5, daemon=True).start()
-        logger.info("MT5 connection starting in background...")
+        print("[OK] MT5 connection starting in background...")
 
     # Start server
-    logger.info("Starting middleware server on http://127.0.0.1:5000")
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    print()
+    print(">>> SERVER PRONTO! Apri Chrome su: http://localhost:5000")
+    print(">>> NON chiudere questa finestra!")
+    print()
+    sys.stdout.flush()
+    app.run(host="0.0.0.0", port=5000, debug=False)
 
 
 if __name__ == "__main__":
